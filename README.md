@@ -27,45 +27,9 @@ Leaf-21 - 10.255.1.21
 Leaf-22 - 10.255.1.22
 ```
 
-Для начала необходимо настроить underlay сеть и обеспечить базовую IP связанность между всеми устройствами внутри VxLAN фабрики
+В данной статье не будут рассмотрены нюансы настройки Underlay сети. 
 
-### Undrelay
-
-Организуем IP связанность между соседними устройствами:
-  ```buildoutcfg
-interface loopback0
-  description ROUTE_INT
-  ip address 10.255.1.11      ! IP можем использовать с /32
-  ```
-
-```buildoutcfg
-interface ethernet1/1
-  no switchport
-  mtu 9216
-  medium p2p     ! Настраиваем Point-to-Point линки, чтобы убрать необходимость поиска DR/BDR между Nexus
-  ip unnumbered loopback0    ! для экономии и упрощения работы заимствуем IP с Loopback
-  no shutdown
-```
-
-Не будем усложнять сеть и настроим на Leaf и Spine протокол OSPF для IP связанности. 
-
-На Nexus необходимо включить feature OSPF и создать процесс OSPF:
-```buildoutcfg
-feature ospf
-
-router ospf UNREFLAY
-  router-id {ID} ! для каждого устройства задаем ID для упрощения дальнейшего TrobleShoting`a
-```
-Далее на каждом интерфейсе включаем процесс OSPF. Все устройства 
-поместим в area 0:
-```buildoutcfg
-interface loopback0
-  ip router ospf UNDERLAY area 0.0.0.0
-
-interface ethernet1/1-2
-  ip router ospf UNDERLAY area 0.0.0.0
-```
-Проверим, что у нас появилась базоавая IP связанность:
+Однако подтвердим IP связанность между все устройствами в сети
 
 ```buildoutcfg
 Leaf22# sh ip route
@@ -94,24 +58,7 @@ IP Route Table for VRF "default"
 ```
 Как видим от Leaf до других Leaf коммутаторов у нас есть по два пути через 2 Spine.
 
-Так же нам потребуется подключить Firewall. Для этого необходимо включить две фичи:
-```buildoutcfg
-feature vpc
-feature lacp
-```
-Далее настроим домаен VPC между парами Leaf коммутаторов. Домен VPC должен быть одинаковым на обоих устройстваз в паре Nexus. На данном этапе
-настроим только базовые настройки, дальнейшие нюансы связанные с работой VxLAN будем добавлять по мере настройки фабрики:
-
-```buildoutcfg
-vpc domain 2
-  peer-keepalive destination 192.168.2.1 source 192.168.2.2 ! данные адреса настроены на интерфейсе mgmt
-!
-! создаем channel-group 7 mode active на интерфейсах между Nexus
-!
-interface port-channel7 
-  vpc peer-link ! указываем, что этот port-channel является служебным линком между парой устройств 
-```
-Проверим, что VPC синхронизировался и все ок:
+Проверим, что работает VPC для подключения хостов через LACP
 ```buildoutcfg
 vPC domain id                     : 1
 Peer status                       : peer adjacency formed ok
@@ -129,20 +76,7 @@ Delay-restore status              : Timer is off.(timeout = 30s)
 Delay-restore SVI status          : Timer is off.(timeout = 10s)
 Operational Layer3 Peer-router    : Disabled
 
-```
-Далее настраиваем LACP в сторону Firewall. На каждом Leaf настройка должна быть идентична:
-```buildoutcfg
-interface Ethernet1/6
-  switchport mode trunk
-  channel-group 5 mode active
-!
-!
-interface port-channel5
-  switchport mode trunk
-  vpc 5  ! для каждого Port-channel настройка уникальная
-```
-Проверим, что не возникло никаких проблем с VPC:
-```buildoutcfg
+
 vPC status
 ----------------------------------------------------------------------------
 Id    Port          Status Consistency Reason                Active vlans
@@ -150,12 +84,13 @@ Id    Port          Status Consistency Reason                Active vlans
 5     Po5           up     success     success               1
 ```
 
-На данном этапе будем считать настройку базовой Underlay сети выполненной.
-Конечно можно настроить еще различные технологии для уменьшения времени сходимости
- и скорости реагирования на какие-либо изменения, но данный материал выходит за рамки данной статьи.
+Перейдем к настрокей Overlay сети.
+В рамках данной статьи разберем как организовать L2 связанность между хостами. То есть в финале мы должны получить такую схему:
+
+![](img/logic.jpg)
 
 
-Для настройки Overlay сети необходимо на Spine коммутаторах включить BGP с поддержкой семейства l2vpn evpn:
+Для настройки Overlay сети необходимо на Spine и Leaf коммутаторах включить BGP с поддержкой семейства l2vpn evpn:
 
 ```buildoutcfg
 feature bgp
@@ -280,9 +215,9 @@ Route Distinguisher: 10.255.1.22:32777
 * i                   10.255.1.20                       100          0 i
 ```
 
-Выше видим только маршруты 3 типа, которые рассказывают о peer(Leaf), однако где же наши хосты?
+Выше видим маршруты только 3 типа, которые рассказывают о peer(Leaf), однако где же наши хосты?
 
-Для того чтобы увидеть наши хосты необходимо настроить EVPN route-type 2, которые будут рассказывать об MAC или MAC/IP хостов
+Для того чтобы увидеть наши хосты необходимо настроить EVPN route-type 2, которые будут рассказывать о MAC или MAC/IP хостов
 
 ```buildoutcfg
 evpn
@@ -291,7 +226,7 @@ evpn
     route-target export auto
 ```
 
-Так же сделаем ping с одного хоста до другого и в BGP l2route evpn появляются следующая информация:
+Так же сделаем ping с одного хоста до другого и в BGP l2route evpn появляeтся следующая информация:
 
 ```buildoutcfg
 Firewall2# ping 192.168.10.1
@@ -302,6 +237,7 @@ Request 0 timed out
 64 bytes from 192.168.10.1: icmp_seq=2 ttl=254 time=38.756 ms
 64 bytes from 192.168.10.1: icmp_seq=3 ttl=254 time=42.484 ms
 64 bytes from 192.168.10.1: icmp_seq=4 ttl=254 time=40.983 ms
+
 
 Leaf11# sh bgp l2vpn evpn
 <......>
@@ -336,4 +272,46 @@ Route Distinguisher: 10.255.1.22:32777
 * i                   10.255.1.20                       100          0 i
 ```
 
-Отлично, теперь у у нас появилась L2 свзянность
+Отлично, теперь у у нас появилась L2 свзянность. В BGP l2route evpn видим MAC адрес хоста. однако вместо IP - `0.0.0.0`.
+Чтобы добавить IP адрес в BGP вместе с MAC адресом необходимо добавить interface vlan:
+
+```buildoutcfg
+feature interface-vlan
+
+fabric forwarding anycast-gateway-mac 0001.0001.0001    ! задаем virtual mac для создания распределенного шлюза между всеми коммутаторами
+
+interface Vlan10
+  no shutdown
+  ip address 192.168.10.254/24          ! на всех Leaf задаем одинаковый IP
+  fabric forwarding mode anycast-gateway    ! говорим использовать Virtual mac
+```
+Теперь проверим BGP l2route evpn
+
+```buildoutcfg
+Leaf11# sh bgp l2vpn evpn
+<......>
+
+   Network            Next Hop            Metric     LocPrf     Weight Path
+Route Distinguisher: 10.255.1.11:32777    (L2VNI 10000)
+*>l[2]:[0]:[0]:[48]:[5001.0007.0007]:[0]:[0.0.0.0]/216
+                      10.255.1.10                       100      32768 i
+*>i[2]:[0]:[0]:[48]:[5001.0008.0007]:[0]:[0.0.0.0]/216
+                      10.255.1.20                       100          0 i
+* i                   10.255.1.20                       100          0 i
+* i[2]:[0]:[0]:[48]:[5001.0008.0007]:[32]:[192.168.10.2]/248
+                      10.255.1.20                       100          0 i
+*>i                   10.255.1.20                       100          0 i
+
+<......>
+
+Route Distinguisher: 10.255.1.21:32777
+* i[2]:[0]:[0]:[48]:[5001.0008.0007]:[0]:[0.0.0.0]/216
+                      10.255.1.20                       100          0 i
+*>i                   10.255.1.20                       100          0 i
+* i[2]:[0]:[0]:[48]:[5001.0008.0007]:[32]:[192.168.10.2]/248
+                      10.255.1.20                       100          0 i
+*>i                   10.255.1.20                       100          0 i
+
+<......>
+```
+Как видно из вывода команды в EVPN route-type 2 добавился еще и IP хоста
