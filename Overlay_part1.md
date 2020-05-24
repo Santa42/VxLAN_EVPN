@@ -13,7 +13,7 @@
 
 Используемая топология выглядит следующим образом:
 
-![](img/underlayforl2.jpg)
+![](img/Overlay_part1/underlayforl2.jpg)
 
 Зададим адресацию на всех устройствах:
 ```buildoutcfg
@@ -79,7 +79,7 @@ Id    Port          Status Consistency Reason                Active vlans
 
 В рамках статьи необходимо организовать сеть между хостами, как показано на схеме ниже:
 
-![](img/logicl2.jpg) 
+![](img/Overlay_part1/logicl2.jpg) 
 
 Для настройки Overlay сети необходимо на Spine и Leaf коммутаторах включить BGP с поддержкой семейства l2vpn evpn:
 
@@ -182,7 +182,7 @@ interface loopback0
 ``` 
 Таким образом с точки зрения других VTEP мы получаем следующую топологию:
 
-![](img/vpc_ip.jpg)
+![](img/Overlay_part1/vpc_ip.jpg)
 
 То есть теперь тоннель будет строиться между IP адресом Leaf-21 и виртуальным IP между двумя Leaf-11 и Leaf-12. 
 Теперь проблем с изучением MAC адреса от двух устройств возникать не будет и трафик может переходить от одного VTEP на другой.
@@ -300,7 +300,7 @@ led nexthop
 ```
 Давайте посмотрим как выглядят кадры, когда они передаются через фибрику:
 
-![](img/l2_wiresh.jpg) 
+![](img/Overlay_part1/l2_wiresh.jpg) 
 
 ### <a name="ARP"></a>Suppress-ARP
 
@@ -334,7 +334,7 @@ interface Vlan10
 
 Таким образом с точки зрения хостов сеть будет выглядеть следующим образом:
 
-![](img/l2_ip.jpg)
+![](img/Overlay_part1/l2_ip.jpg)
 
 
 Теперь проверим BGP l2route evpn
